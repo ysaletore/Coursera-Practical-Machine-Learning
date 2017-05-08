@@ -1,0 +1,93 @@
+---
+title: "Coursera Practical Machine Learning Final Project"
+author: "Yogesh Saletore"
+date: "May 6th, 2017"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+keep_md: yes
+---
+
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement -- a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data loading and Processing
+## Load the data
+```{r, echo = TRUE}
+library(caret)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(repmis)
+set.seed(1234)
+
+all_training <- read.csv("pml-training.csv", na.strings = c("", "NA", "#DIV/0!"))
+testing <- read.csv("pml-testing.csv", na.strings = c("", "NA", "#DIV/0!"))
+```
+
+## Clean the data
+Remove columns with missing/unknown values.
+```{r, echo = TRUE}
+all_training <- all_training[, colSums(is.na(all_training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
+
+all_training <- all_training[,-(1:5)]
+testing <- testing[, -(1:5)]
+```
+
+Remove columns that have near zero variance:
+```{r, echo = TRUE}
+nzv_all_training <- nearZeroVar(all_training, saveMetrics=TRUE)
+all_training <- all_training[, !nzv_all_training$nzv]
+
+nzv_testing <- nearZeroVar(testing, saveMetrics=TRUE)
+testing <- testing[, !nzv_testing$nzv]
+```
+
+## Training and Validation Data
+```{r, echo = TRUE}
+train_idx <- createDataPartition(all_training$classe, p = 0.70, list=FALSE)
+training <- all_training[train_idx,]
+validation <- all_training[-train_idx,]
+```
+
+# Decision Trees
+Let's try using `rpart` and Decision Trees with 5-fold cross validation.
+```{r, echo = TRUE}
+trControl <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = training, method = "rpart", 
+	trControl = trControl)
+fancyRpartPlot(fit_rpart$finalModel)
+```
+
+Now see how well it performs on the validation data set:
+```{r, echo = TRUE}
+fit_rpart_predictions <- predict(fit_rpart, validation)
+fit_rpart_predictions_cm <- confusionMatrix(fit_rpart_predictions, validation$classe)
+fit_rpart_predictions_cm
+```
+The accuracy is 66.17%, so still not very good, and could perhaps be improved upon with something better.
+
+# Random Forest
+Now let's see if random forest regression is any better.
+```{r, echo = TRUE}
+fit_rf <- train(classe ~ ., data = training, method = "rf", 
+	trControl = trControl, allowParallel=TRUE, importance=TRUE)
+print(fit_rf, digits = 3)
+```
+Now let's see how well it performs on the validation set:
+```{r, echo = TRUE}
+fit_rf_predictions <- predict(fit_rf, validation)
+fit_rf_predictions_cm <- confusionMatrix(fit_rf_predictions, validation$classe)
+fit_rf_predictions_cm
+```
+The random forest model achieves an accuracy of 99.83%, with an out of sample error of only 0.17%, much better than the earlier decision tree method. 
+
+# Use Random Forest Model on Test Data Set
+```{r, echo = TRUE}
+fit_rf_test_predictions <- predict(fit_rf, testing)
+fit_rf_test_predictions
+```
